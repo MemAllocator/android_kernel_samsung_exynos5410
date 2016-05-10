@@ -675,17 +675,33 @@ static int wl_android_get_full_roam_scan_period(
 int wl_android_set_country_rev(
 	struct net_device *dev, char* command, int total_len)
 {
-	struct wl_country cspec_ext;
+	int error = 0;
+	wl_country_t cspec = {{0}, 0, {0} };
+	char country_code[WLC_CNTRY_BUF_SZ];
+	char smbuf[WLC_IOCTL_SMLEN];
+	int rev = 0;
 
-	strcpy( cspec_ext.country_abbrev, "US" );
-	cspec_ext.rev = 46;
-	strcpy( cspec_ext.ccode, "US" );
+	memset(country_code, 0, sizeof(country_code));
+	sscanf(command+sizeof("SETCOUNTRYREV"), "%3s %10d", country_code, &rev);
+	WL_TRACE(("country_code = %s, rev = %d\n", country_code, rev));
 
-	dhd_bus_country_set(dev, &cspec_ext, true);
-	DHD_INFO(("%s: set country '%s/%d'\n",
-		__FUNCTION__, cspec_ext.ccode, cspec_ext.rev));
+	memcpy(cspec.country_abbrev, country_code, sizeof(country_code));
+	memcpy(cspec.ccode, country_code, sizeof(country_code));
+	cspec.rev = rev;
 
-	return 0;
+	error = wldev_iovar_setbuf(dev, "country", (char *)&cspec,
+		sizeof(cspec), smbuf, sizeof(smbuf), NULL);
+
+	if (error) {
+		DHD_ERROR(("%s: set country '%s/%d' failed code %d\n",
+			__FUNCTION__, cspec.ccode, cspec.rev, error));
+	} else {
+		dhd_bus_country_set(dev, &cspec, true);
+		DHD_INFO(("%s: set country '%s/%d'\n",
+			__FUNCTION__, cspec.ccode, cspec.rev));
+	}
+
+	return error;
 }
 
 static int wl_android_get_country_rev(
@@ -1333,7 +1349,7 @@ exit:
 #ifndef WL_SCHED_SCAN
 static int wl_android_set_pno_setup(struct net_device *dev, char *command, int total_len)
 {
-	wlc_ssid_ext_t ssids_local[MAX_PFN_LIST_COUNT];
+	wlc_ssid_t ssids_local[MAX_PFN_LIST_COUNT];
 	int res = -1;
 	int nssid = 0;
 	cmd_tlv_t *cmd_tlv_temp;

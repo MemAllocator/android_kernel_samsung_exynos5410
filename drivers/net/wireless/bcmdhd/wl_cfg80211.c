@@ -786,9 +786,7 @@ static const u32 __wl_cipher_suites[] = {
 	WLAN_CIPHER_SUITE_WEP104,
 	WLAN_CIPHER_SUITE_TKIP,
 	WLAN_CIPHER_SUITE_CCMP,
-#ifdef MFP
 	WLAN_CIPHER_SUITE_AES_CMAC,
-#endif
 #ifdef BCMWAPI_WPI
 	WLAN_CIPHER_SUITE_SMS4,
 #endif
@@ -7411,23 +7409,6 @@ fail:
 #define PNO_TIME		30
 #define PNO_REPEAT		4
 #define PNO_FREQ_EXPO_MAX	2
-static bool
-is_ssid_in_list(struct cfg80211_ssid *ssid, struct cfg80211_ssid *ssid_list, int count)
-{
-	int i;
-
-	if (!ssid || !ssid_list)
-		return FALSE;
-
-	for (i = 0; i < count; i++) {
-		if (ssid->ssid_len == ssid_list[i].ssid_len) {
-			if (strncmp(ssid->ssid, ssid_list[i].ssid, ssid->ssid_len) == 0)
-				return TRUE;
-		}
-	}
-	return FALSE;
-}
-
 static int
 wl_cfg80211_sched_scan_start(struct wiphy *wiphy,
                              struct net_device *dev,
@@ -7436,11 +7417,10 @@ wl_cfg80211_sched_scan_start(struct wiphy *wiphy,
 	ushort pno_time = PNO_TIME;
 	int pno_repeat = PNO_REPEAT;
 	int pno_freq_expo_max = PNO_FREQ_EXPO_MAX;
-	wlc_ssid_ext_t ssids_local[MAX_PFN_LIST_COUNT];
+	wlc_ssid_t ssids_local[MAX_PFN_LIST_COUNT];
 	struct bcm_cfg80211 *cfg = wiphy_priv(wiphy);
 	struct cfg80211_ssid *ssid = NULL;
-	struct cfg80211_ssid *hidden_ssid_list = NULL;
-	int ssid_cnt = 0;
+	int ssid_count = 0;
 	int i;
 	int ret = 0;
 
@@ -7459,29 +7439,30 @@ wl_cfg80211_sched_scan_start(struct wiphy *wiphy,
 
 	memset(&ssids_local, 0, sizeof(ssids_local));
 
-	if (request->n_ssids > 0)
-		hidden_ssid_list = request->ssids;
-
-	for (i = 0; i < request->n_match_sets && ssid_cnt < MAX_PFN_LIST_COUNT; i++) {
-		ssid = &request->match_sets[i].ssid;
-		/* No need to include null ssid */
-		if (ssid->ssid_len) {
-			memcpy(ssids_local[ssid_cnt].SSID, ssid->ssid, ssid->ssid_len);
-			ssids_local[ssid_cnt].SSID_len = ssid->ssid_len;
-			if (is_ssid_in_list(ssid, hidden_ssid_list, request->n_ssids)) {
-				ssids_local[ssid_cnt].hidden = TRUE;
-				WL_PNO((">>> PNO hidden SSID (%s) \n", ssid->ssid));
-			} else {
-				ssids_local[ssid_cnt].hidden = FALSE;
-				WL_PNO((">>> PNO non-hidden SSID (%s) \n", ssid->ssid));
-			}
-			ssid_cnt++;
+	if (request->n_match_sets > 0) {
+		for (i = 0; i < request->n_match_sets; i++) {
+			ssid = &request->match_sets[i].ssid;
+			memcpy(ssids_local[i].SSID, ssid->ssid, ssid->ssid_len);
+			ssids_local[i].SSID_len = ssid->ssid_len;
+			WL_PNO((">>> PNO filter set for ssid (%s) \n", ssid->ssid));
+			ssid_count++;
 		}
 	}
 
-	if (ssid_cnt) {
-		if ((ret = dhd_dev_pno_set_for_ssid(dev, ssids_local, ssid_cnt, pno_time,
-		        pno_repeat, pno_freq_expo_max, NULL, 0)) < 0) {
+	if (request->n_ssids > 0) {
+		for (i = 0; i < request->n_ssids; i++) {
+			/* Active scan req for ssids */
+			WL_PNO((">>> Active scan req for ssid (%s) \n", request->ssids[i].ssid));
+
+			/* match_set ssids is a supert set of n_ssid list, so we need
+			 * not add these set seperately
+			 */
+		}
+	}
+
+	if (ssid_count) {
+		if ((ret = dhd_dev_pno_set_for_ssid(dev, ssids_local, request->n_match_sets,
+			pno_time, pno_repeat, pno_freq_expo_max, NULL, 0)) < 0) {
 			WL_ERR(("PNO setup failed!! ret=%d \n", ret));
 			return -EINVAL;
 		}
@@ -9764,20 +9745,13 @@ wl_cfg80211_netdev_notifier_call(struct notifier_block * nb,
 	unsigned long state,
 	void *ndev)
 {
-	struct bcm_cfg80211 *cfg =
-		container_of(nb, struct bcm_cfg80211, netdev_notifier);
 	struct net_device *dev = ndev;
 	struct wireless_dev *wdev = dev->ieee80211_ptr;
+	struct bcm_cfg80211 *cfg = g_bcm_cfg;
 
-	/* We need to be careful when using passed in net_device since
-	 * we can not assume that it belongs to bcmdhd driver. We will
-	 * also encounter all other devices in the system, for example
-	 * loopback.
-	 */
+	WL_DBG(("Enter \n"));
 
-	WL_DBG(("Enter\n"));
-
-	if (!wdev || dev == bcmcfg_to_prmry_ndev(cfg))
+	if (!wdev || !cfg || dev == bcmcfg_to_prmry_ndev(cfg))
 		return NOTIFY_DONE;
 
 	switch (state) {
@@ -9834,6 +9808,13 @@ wl_cfg80211_netdev_notifier_call(struct notifier_block * nb,
 	}
 	return NOTIFY_DONE;
 }
+static struct notifier_block wl_cfg80211_netdev_notifier = {
+	.notifier_call = wl_cfg80211_netdev_notifier_call,
+};
+/* to make sure we won't register the same notifier twice, otherwise a loop is likely to be
+ * created in kernel notifier link list (with 'next' pointing to itself)
+ */
+static bool wl_cfg80211_netdev_notifier_registered = FALSE;
 
 static void wl_cfg80211_scan_abort(struct bcm_cfg80211 *cfg)
 {
@@ -10515,7 +10496,10 @@ static void wl_deinit_priv(struct bcm_cfg80211 *cfg)
 	wl_link_down(cfg);
 	del_timer_sync(&cfg->scan_timeout);
 	wl_deinit_priv_mem(cfg);
-	unregister_netdevice_notifier(&cfg->netdev_notifier);
+	if (wl_cfg80211_netdev_notifier_registered) {
+		wl_cfg80211_netdev_notifier_registered = FALSE;
+		unregister_netdevice_notifier(&wl_cfg80211_netdev_notifier);
+	}
 }
 
 #if defined(WL_ENABLE_P2P_IF) || defined(WL_NEWCFG_PRIVCMD_SUPPORT)
@@ -10679,14 +10663,15 @@ s32 wl_cfg80211_attach(struct net_device *ndev, void *context)
 		goto cfg80211_attach_out;
 	}
 #endif
-
-	cfg->netdev_notifier.notifier_call = wl_cfg80211_netdev_notifier_call;
-	err = register_netdevice_notifier(&cfg->netdev_notifier);
-	if (err) {
-		WL_ERR(("Failed to register notifierl %d\n", err));
-		goto cfg80211_attach_out;
+	if (!wl_cfg80211_netdev_notifier_registered) {
+		wl_cfg80211_netdev_notifier_registered = TRUE;
+		err = register_netdevice_notifier(&wl_cfg80211_netdev_notifier);
+		if (err) {
+			wl_cfg80211_netdev_notifier_registered = FALSE;
+			WL_ERR(("Failed to register notifierl %d\n", err));
+			goto cfg80211_attach_out;
+		}
 	}
-
 #if defined(COEX_DHCP)
 	cfg->btcoex_info = wl_cfg80211_btcoex_init(cfg->wdev->netdev);
 	if (!cfg->btcoex_info)

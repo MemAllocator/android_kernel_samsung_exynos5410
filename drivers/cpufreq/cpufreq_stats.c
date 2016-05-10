@@ -37,7 +37,7 @@ struct cpufreq_stats {
 	unsigned int max_state;
 	unsigned int state_num;
 	unsigned int last_index;
-	u64 *time_in_state;
+	cputime64_t *time_in_state;
 	unsigned int *freq_table;
 #ifdef CONFIG_CPU_FREQ_STAT_DETAILS
 	unsigned int *trans_table;
@@ -197,10 +197,8 @@ static int cpufreq_stats_create_table(struct cpufreq_policy *policy,
 	struct cpufreq_policy *data;
 	unsigned int alloc_size;
 	unsigned int cpu = policy->cpu;
-
 	if (per_cpu(cpufreq_stats_table, cpu))
-		return 0;
-
+		return -EBUSY;
 	stat = kzalloc(sizeof(struct cpufreq_stats), GFP_KERNEL);
 	if ((stat) == NULL)
 		return -ENOMEM;
@@ -225,7 +223,7 @@ static int cpufreq_stats_create_table(struct cpufreq_policy *policy,
 		count++;
 	}
 
-	alloc_size = count * sizeof(int) + count * sizeof(u64);
+	alloc_size = count * sizeof(int) + count * sizeof(cputime64_t);
 
 #ifdef CONFIG_CPU_FREQ_STAT_DETAILS
 	alloc_size += count * count * sizeof(int);

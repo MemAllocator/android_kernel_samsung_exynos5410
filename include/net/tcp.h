@@ -62,7 +62,7 @@ extern void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define MAX_TCP_WINDOW		32767U
 
 /* Offer an initial receive window of 10 mss. */
-#define TCP_DEFAULT_INIT_RCVWND	16
+#define TCP_DEFAULT_INIT_RCVWND	10
 
 /* Minimal accepted MSS. It is (60+60+8) - (20+20). */
 #define TCP_MIN_MSS		88U
@@ -395,7 +395,6 @@ extern void tcp_enter_loss(struct sock *sk, int how);
 extern void tcp_clear_retrans(struct tcp_sock *tp);
 extern void tcp_update_metrics(struct sock *sk);
 extern void tcp_close(struct sock *sk, long timeout);
-extern void tcp_init_sock(struct sock *sk);
 extern unsigned int tcp_poll(struct file * file, struct socket *sock,
 			     struct poll_table_struct *wait);
 extern int tcp_getsockopt(struct sock *sk, int level, int optname,

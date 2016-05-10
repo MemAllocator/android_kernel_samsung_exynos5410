@@ -47,6 +47,7 @@
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/printk.h>
+#include <mach/sec_debug.h>
 
 #ifdef CONFIG_ARM_EXYNOS_IKS_CPUFREQ
 #include <mach/cpufreq.h>

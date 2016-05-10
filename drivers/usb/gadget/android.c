@@ -1014,10 +1014,6 @@ static int mass_storage_function_init(struct android_usb_function *f,
 
 static void mass_storage_function_cleanup(struct android_usb_function *f)
 {
-	struct mass_storage_function_config *config;
-
-	config = f->config;
-	fsg_common_put(config->common);
 	kfree(f->config);
 	f->config = NULL;
 }
@@ -1613,7 +1609,7 @@ static ssize_t enable_store(struct device *pdev, struct device_attribute *attr,
 		}
 		strncpy(manufacturer_string, "SAMSUNG",
 				sizeof(manufacturer_string) - 1);
-		strncpy(product_string, "GT-I9500",
+		strncpy(product_string, "SAMSUNG_Android",
 				sizeof(product_string) - 1);
 #endif
 		cdev->desc.bDeviceSubClass = device_desc.bDeviceSubClass;

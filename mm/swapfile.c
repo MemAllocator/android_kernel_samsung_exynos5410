@@ -33,7 +33,6 @@
 #include <linux/oom.h>
 #include <linux/frontswap.h>
 #include <linux/swapfile.h>
-#include <linux/export.h>
 
 #include <asm/pgtable.h>
 #include <asm/tlbflush.h>
@@ -720,6 +719,37 @@ int free_swap_and_cache(swp_entry_t entry)
 	}
 	return p != NULL;
 }
+
+#ifdef CONFIG_CGROUP_MEM_RES_CTLR
+/**
+ * mem_cgroup_count_swap_user - count the user of a swap entry
+ * @ent: the swap entry to be checked
+ * @pagep: the pointer for the swap cache page of the entry to be stored
+ *
+ * Returns the number of the user of the swap entry. The number is valid only
+ * for swaps of anonymous pages.
+ * If the entry is found on swap cache, the page is stored to pagep with
+ * refcount of it being incremented.
+ */
+int mem_cgroup_count_swap_user(swp_entry_t ent, struct page **pagep)
+{
+	struct page *page;
+	struct swap_info_struct *p;
+	int count = 0;
+
+	page = find_get_page(&swapper_space, ent.val);
+	if (page)
+		count += page_mapcount(page);
+	p = swap_info_get(ent);
+	if (p) {
+		count += swap_count(p->swap_map[swp_offset(ent)]);
+		spin_unlock(&swap_lock);
+	}
+
+	*pagep = page;
+	return count;
+}
+#endif
 
 #ifdef CONFIG_HIBERNATION
 /*
@@ -2285,31 +2315,6 @@ int swapcache_prepare(swp_entry_t entry)
 {
 	return __swap_duplicate(entry, SWAP_HAS_CACHE);
 }
-
-struct swap_info_struct *page_swap_info(struct page *page)
-{
-	swp_entry_t swap = { .val = page_private(page) };
-	BUG_ON(!PageSwapCache(page));
-	return swap_info[swp_type(swap)];
-}
-
-/*
- * out-of-line __page_file_ methods to avoid include hell.
- */
-struct address_space *__page_file_mapping(struct page *page)
-{
-	VM_BUG_ON(!PageSwapCache(page));
-	return page_swap_info(page)->swap_file->f_mapping;
-}
-EXPORT_SYMBOL_GPL(__page_file_mapping);
-
-pgoff_t __page_file_index(struct page *page)
-{
-	swp_entry_t swap = { .val = page_private(page) };
-	VM_BUG_ON(!PageSwapCache(page));
-	return swp_offset(swap);
-}
-EXPORT_SYMBOL_GPL(__page_file_index);
 
 /*
  * add_swap_count_continuation - called when a swap count is duplicated

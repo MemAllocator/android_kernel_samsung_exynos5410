@@ -21,18 +21,18 @@
  * tunables
  */
 /* max queue in one round of service */
-static const int cfq_quantum = 4;
-static const int cfq_fifo_expire[2] = {42, 11};
+static const int cfq_quantum = 8;
+static const int cfq_fifo_expire[2] = { HZ / 4, HZ / 8 };
 /* maximum backwards seek, in KiB */
-static const int cfq_back_max = 12582912;
+static const int cfq_back_max = 16 * 1024;
 /* penalty of a backwards seek */
-static const int cfq_back_penalty = 1;
-static const int cfq_slice_sync = HZ / 8;
-static int cfq_slice_async = 7;
+static const int cfq_back_penalty = 2;
+static const int cfq_slice_sync = HZ / 10;
+static int cfq_slice_async = HZ / 25;
 static const int cfq_slice_async_rq = 2;
-static int cfq_slice_idle = 0;
-static int cfq_group_idle = 0;
-static const int cfq_target_latency = 300; /* 300 ms */
+static int cfq_slice_idle = HZ / 125;
+static int cfq_group_idle = HZ / 125;
+static const int cfq_target_latency = HZ * 3/10; /* 300 ms */
 static const int cfq_hist_divisor = 4;
 
 /*
@@ -2305,9 +2305,6 @@ static void cfq_choose_cfqg(struct cfq_data *cfqd)
 {
 	struct cfq_group *cfqg = cfq_get_next_cfqg(cfqd);
 
-	if (!cfqg)
-		return;
-
 	cfqd->serving_group = cfqg;
 
 	/* Restore the workload type data */
@@ -3744,7 +3741,7 @@ static void *cfq_init_queue(struct request_queue *q)
 	cfqd->cfq_slice[1] = cfq_slice_sync;
 	cfqd->cfq_target_latency = cfq_target_latency;
 	cfqd->cfq_slice_async_rq = cfq_slice_async_rq;
-	cfqd->cfq_slice_idle = blk_queue_nonrot(q) ? 0 : cfq_slice_idle;
+	cfqd->cfq_slice_idle = cfq_slice_idle;
 	cfqd->cfq_group_idle = cfq_group_idle;
 	cfqd->cfq_latency = 1;
 	cfqd->hw_tag = -1;
@@ -3754,18 +3751,6 @@ static void *cfq_init_queue(struct request_queue *q)
 	 */
 	cfqd->last_delayed_sync = jiffies - HZ;
 	return cfqd;
-}
-
-static void cfq_registered_queue(struct request_queue *q)
-{
-	struct elevator_queue *e = q->elevator;
-	struct cfq_data *cfqd = e->elevator_data;
-
-	/*
-	 * Default to IOPS mode with no idling for SSDs
-	 */
-	if (blk_queue_nonrot(q))
-		cfqd->cfq_slice_idle = 0;
 }
 
 /*
@@ -3883,7 +3868,6 @@ static struct elevator_type iosched_cfq = {
 		.elevator_may_queue_fn =	cfq_may_queue,
 		.elevator_init_fn =		cfq_init_queue,
 		.elevator_exit_fn =		cfq_exit_queue,
-		.elevator_registered_fn =	cfq_registered_queue,
 	},
 	.icq_size	=	sizeof(struct cfq_io_cq),
 	.icq_align	=	__alignof__(struct cfq_io_cq),

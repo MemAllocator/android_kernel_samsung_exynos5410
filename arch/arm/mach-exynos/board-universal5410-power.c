@@ -66,8 +66,8 @@ static struct exynos_devfreq_platdata universal5410_qos_int_pd __initdata = {
 
 #ifdef CONFIG_ARM_EXYNOS_IKS_CPUFREQ
 static struct exynos_tmu_platform_data exynos5_tmu_data = {
-	.trigger_levels[0] = 90,
-	.trigger_levels[1] = 95,
+	.trigger_levels[0] = 80,
+	.trigger_levels[1] = 85,
 	.trigger_levels[2] = 110,
 	.trigger_levels[3] = 115,
 	.boost_trigger_levels[0] = 100,
@@ -85,11 +85,11 @@ static struct exynos_tmu_platform_data exynos5_tmu_data = {
 	.efuse_value = 55,
 	.freq_tab[0] = {
 		.freq_clip_max = 1400 * 1000,
-		.temp_level = 90,
+		.temp_level = 80,
 	},
 	.freq_tab[1] = {
 		.freq_clip_max = 1000 * 1000,
-		.temp_level = 95,
+		.temp_level = 85,
 	},
 	.freq_tab[2] = {
 		.freq_clip_max = 600 * 1000,
@@ -202,5 +202,6 @@ void __init exynos5_universal5410_power_init(void)
 	sec_gpio_init();
 	sec_config_gpio_table();
 	exynos_set_sleep_gpio_table = sec_config_sleep_gpio_table;
+	exynos_debug_show_gpio = sec_debug_show_gpio;
 #endif
 }

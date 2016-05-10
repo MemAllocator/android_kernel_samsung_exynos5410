@@ -29,6 +29,7 @@
 #include <asm/sections.h>
 
 #include "coresight.h"
+#include <mach/sec_debug.h>
 
 #define etm_writel(etm, cpu, val, off)	\
 			__raw_writel((val), etm.base + (SZ_4K * cpu) + off)
@@ -346,6 +347,9 @@ int etm_enable(int pm_enable)
 {
 	int ret, cpu;
 
+	if (!sec_debug_level.en.kernel_fault)
+		return -ENODEV;
+
 	if (etm.enabled) {
 		dev_err(etm.dev, "ETM tracing already enabled\n");
 		ret = -EPERM;
@@ -401,6 +405,9 @@ static void __etm_disable(int cpu)
 int etm_disable(int pm_enable)
 {
 	int ret, cpu;
+
+	if (!sec_debug_level.en.kernel_fault)
+		return -ENODEV;
 
 	if (!etm.enabled) {
 		dev_err(etm.dev, "ETM tracing already disabled\n");

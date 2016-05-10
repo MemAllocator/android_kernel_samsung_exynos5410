@@ -338,17 +338,48 @@ int wldev_set_band(
 int wldev_set_country(
 	struct net_device *dev, char *country_code, bool notify, bool user_enforced)
 {
-	struct wl_country cspec_ext;
+	int error = -1;
+	wl_country_t cspec = {{0}, 0, {0}};
+	scb_val_t scbval;
+	char smbuf[WLC_IOCTL_SMLEN];
 
-	country_code = "US";
+	if (!country_code)
+		return error;
 
-	strcpy( cspec_ext.country_abbrev, "US" );
-	cspec_ext.rev = 46;
-	strcpy( cspec_ext.ccode, "US" );
+	bzero(&scbval, sizeof(scb_val_t));
+	error = wldev_iovar_getbuf(dev, "country", NULL, 0, &cspec, sizeof(cspec), NULL);
+	if (error < 0) {
+		WLDEV_ERROR(("%s: get country failed = %d\n", __FUNCTION__, error));
+		return error;
+	}
 
-	dhd_bus_country_set(dev, &cspec_ext, notify);
-	WLDEV_ERROR(("%s: set country for %s as %s rev %d\n",
-		__FUNCTION__, country_code, cspec_ext.ccode, cspec_ext.rev));
+	if ((error < 0) ||
+	    (strncmp(country_code, cspec.country_abbrev, WLC_CNTRY_BUF_SZ) != 0)) {
 
+		if (user_enforced) {
+			bzero(&scbval, sizeof(scb_val_t));
+			error = wldev_ioctl(dev, WLC_DISASSOC, &scbval, sizeof(scb_val_t), true);
+			if (error < 0) {
+				WLDEV_ERROR(("%s: set country failed due to Disassoc error %d\n",
+					__FUNCTION__, error));
+				return error;
+			}
+		}
+
+		cspec.rev = -1;
+		memcpy(cspec.country_abbrev, country_code, WLC_CNTRY_BUF_SZ);
+		memcpy(cspec.ccode, country_code, WLC_CNTRY_BUF_SZ);
+		dhd_get_customized_country_code(dev, (char *)&cspec.country_abbrev, &cspec);
+		error = wldev_iovar_setbuf(dev, "country", &cspec, sizeof(cspec),
+			smbuf, sizeof(smbuf), NULL);
+		if (error < 0) {
+			WLDEV_ERROR(("%s: set country for %s as %s rev %d failed\n",
+				__FUNCTION__, country_code, cspec.ccode, cspec.rev));
+			return error;
+		}
+		dhd_bus_country_set(dev, &cspec, notify);
+		WLDEV_ERROR(("%s: set country for %s as %s rev %d\n",
+			__FUNCTION__, country_code, cspec.ccode, cspec.rev));
+	}
 	return 0;
 }

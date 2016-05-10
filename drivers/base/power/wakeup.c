@@ -14,13 +14,9 @@
 #include <linux/suspend.h>
 #include <linux/seq_file.h>
 #include <linux/debugfs.h>
-#include <linux/moduleparam.h>
 #include <trace/events/power.h>
 
 #include "power.h"
-
-static bool enable_l2_hsic_ws = true;
-module_param(enable_l2_hsic_ws, bool, 0644);
 
 /*
  * If set, the suspend/hibernate code will abort transitions to a sleep state
@@ -126,15 +122,6 @@ void wakeup_source_destroy(struct wakeup_source *ws)
 EXPORT_SYMBOL_GPL(wakeup_source_destroy);
 
 /**
- * wakeup_source_destroy_cb
- * defer processing until all rcu references have expired
- */
-static void wakeup_source_destroy_cb(struct rcu_head *head)
-{
-	wakeup_source_destroy(container_of(head, struct wakeup_source, rcu));
-}
-
-/**
  * wakeup_source_add - Add given object to the list of wakeup sources.
  * @ws: Wakeup source object to add to the list.
  */
@@ -175,26 +162,6 @@ void wakeup_source_remove(struct wakeup_source *ws)
 EXPORT_SYMBOL_GPL(wakeup_source_remove);
 
 /**
- * wakeup_source_remove_async - Remove given object from the wakeup sources
- * list.
- * @ws: Wakeup source object to remove from the list.
- *
- * Use only for wakeup source objects created with wakeup_source_create().
- * Memory for ws must be freed via rcu.
- */
-static void wakeup_source_remove_async(struct wakeup_source *ws)
-{
-	unsigned long flags;
-
-	if (WARN_ON(!ws))
-		return;
-
-	spin_lock_irqsave(&events_lock, flags);
-	list_del_rcu(&ws->entry);
-	spin_unlock_irqrestore(&events_lock, flags);
-}
-
-/**
  * wakeup_source_register - Create wakeup source and add it to the list.
  * @name: Name of the wakeup source to register.
  */
@@ -217,8 +184,8 @@ EXPORT_SYMBOL_GPL(wakeup_source_register);
 void wakeup_source_unregister(struct wakeup_source *ws)
 {
 	if (ws) {
-		wakeup_source_remove_async(ws);
-		call_rcu(&ws->rcu, wakeup_source_destroy_cb);
+		wakeup_source_remove(ws);
+		wakeup_source_destroy(ws);
 	}
 }
 EXPORT_SYMBOL_GPL(wakeup_source_unregister);
@@ -414,11 +381,6 @@ EXPORT_SYMBOL_GPL(device_set_wakeup_enable);
 static void wakeup_source_activate(struct wakeup_source *ws)
 {
 	unsigned int cec;
-
-	if (!enable_l2_hsic_ws && !strcmp(ws->name, "l2_hsic")) {
-		pr_info("wakeup source l2_hsic activate skipped\n");
-		return;
-	}
 
 	ws->active = true;
 	ws->active_count++;

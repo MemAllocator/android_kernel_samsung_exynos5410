@@ -639,7 +639,7 @@ static int mbind_range(struct mm_struct *mm, unsigned long start,
 			((vmstart - vma->vm_start) >> PAGE_SHIFT);
 		prev = vma_merge(mm, prev, vmstart, vmend, vma->vm_flags,
 				  vma->anon_vma, vma->vm_file, pgoff,
-				  new_pol, vma_get_anon_name(name));
+				  new_pol);
 		if (prev) {
 			vma = prev;
 			next = vma->vm_next;
@@ -1582,14 +1582,8 @@ static unsigned interleave_nodes(struct mempolicy *policy)
  * task can change it's policy.  The system default policy requires no
  * such protection.
  */
-unsigned slab_node(void)
+unsigned slab_node(struct mempolicy *policy)
 {
-	struct mempolicy *policy;
-
-	if (in_interrupt())
-		return numa_node_id();
-
-	policy = current->mempolicy;
 	if (!policy || policy->flags & MPOL_F_LOCAL)
 		return numa_node_id();
 

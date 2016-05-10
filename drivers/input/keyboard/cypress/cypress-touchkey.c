@@ -68,6 +68,7 @@ static u8 touchkey_threshold;
 
 static int touchkey_autocalibration(struct touchkey_i2c *tkey_i2c);
 #endif
+static void cypress_touchkey_interrupt_set_dual(struct i2c_client *client);
 
 static int touchkey_i2c_check(struct touchkey_i2c *tkey_i2c);
 
@@ -792,6 +793,9 @@ static int touchkey_firmware_version_check(struct touchkey_i2c *tkey_i2c)
 		tkey_i2c->firmware_id = TK_MODULE_20045;
 	}
 
+	/* CYPRESS Firmware setting interrupt type : dual or single interrupt */
+		cypress_touchkey_interrupt_set_dual(tkey_i2c->client);
+
 	return ret;
 }
 
@@ -867,10 +871,12 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 {
 	struct touchkey_i2c *tkey_i2c = dev_id;
 	u8 data[3];
-	int ret = 0;
+	int ret;
 	int retry = 10;
+	int pressed = 0;
+	int i = 0;
+	int keycode_data[touchkey_count];
 	int keycode_type = 0;
-	int pressed;
 
 	retry = 3;
 	while (retry--) {
@@ -886,24 +892,45 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 	if (ret < 0)
 		return IRQ_HANDLED;
 
-	keycode_type = (data[0] & TK_BIT_KEYCODE);
-	pressed = !(data[0] & TK_BIT_PRESS_EV);
+	if (tkey_i2c->firmware_ver > TK_MULTI_FW_VER) {
+		keycode_data[1] = data[0] & 0x3;
+		keycode_data[2] = (data[0] >> 2) & 0x3;
 
-	if (keycode_type <= 0 || keycode_type >= touchkey_count) {
-		dev_dbg(&tkey_i2c->client->dev, "keycode_type err\n");
-		return IRQ_HANDLED;
-	}
-
-	input_report_key(tkey_i2c->input_dev,
-			 touchkey_keycode[keycode_type], pressed);
-	input_sync(tkey_i2c->input_dev);
+		for (i = 1; i < touchkey_count; i++) {
+			if (keycode_data[i]) {
+				input_report_key(tkey_i2c->input_dev, touchkey_keycode[i], (keycode_data[i] % 2));
 #if !defined(CONFIG_SAMSUNG_PRODUCT_SHIP)
-	dev_info(&tkey_i2c->client->dev, "keycode:%d pressed:%d %d\n",
-	touchkey_keycode[keycode_type], pressed, tkey_i2c->tsk_glove_mode_status);
+				dev_info(&tkey_i2c->client->dev, "keycode: %d %s %d\n", touchkey_keycode[i],
+					(keycode_data[i] % 2) ? "PRESS" : "RELEASE", tkey_i2c->tsk_glove_mode_status);
 #else
-	dev_dbg(&tkey_i2c->client->dev, "pressed:%d %d\n",
-		pressed, tkey_i2c->tsk_glove_mode_status);
+				dev_info(&tkey_i2c->client->dev, " %s %d\n",
+						(keycode_data[i] % 2) ? "PRESS" : "RELEASE", tkey_i2c->tsk_glove_mode_status);
 #endif
+				pressed = keycode_data[i] % 2;
+			}
+		}
+		input_sync(tkey_i2c->input_dev);
+	} else {
+		keycode_type = (data[0] & TK_BIT_KEYCODE);
+		pressed = !(data[0] & TK_BIT_PRESS_EV);
+
+		if (keycode_type <= 0 || keycode_type >= touchkey_count) {
+			dev_dbg(&tkey_i2c->client->dev, "keycode_type err\n");
+			return IRQ_HANDLED;
+		}
+
+		input_report_key(tkey_i2c->input_dev,
+				 touchkey_keycode[keycode_type], pressed);
+		input_sync(tkey_i2c->input_dev);
+#if !defined(CONFIG_SAMSUNG_PRODUCT_SHIP)
+		dev_info(&tkey_i2c->client->dev, "keycode:%d pressed:%d %d\n",
+		touchkey_keycode[keycode_type], pressed, tkey_i2c->tsk_glove_mode_status);
+#else
+		dev_dbg(&tkey_i2c->client->dev, "pressed:%d %d\n",
+			pressed, tkey_i2c->tsk_glove_mode_status);
+#endif
+		}
+
 #ifdef TOUCHKEY_BOOSTER
 	touchkey_set_dvfs_lock(tkey_i2c, !!pressed);
 #endif
@@ -918,9 +945,6 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 	int retry = 10;
 	int keycode_type = 0;
 	int pressed;
-
-	if (!atomic_read(&tkey_i2c->keypad_enable))
-		return IRQ_HANDLED;
 
 	retry = 3;
 	while (retry--) {
@@ -1022,6 +1046,9 @@ static int touchkey_start(struct touchkey_i2c *tkey_i2c)
 	tkey_i2c->pdata->led_power_on(1);
 
 	tkey_i2c->enabled = true;
+
+	/* CYPRESS Firmware setting interrupt type : dual or single interrupt */
+	cypress_touchkey_interrupt_set_dual(tkey_i2c->client);
 
 #if defined(TK_HAS_AUTOCAL)
 	touchkey_autocalibration(tkey_i2c);
@@ -1197,6 +1224,52 @@ static int touchkey_resume(struct device *dev)
 static SIMPLE_DEV_PM_OPS(touchkey_pm_ops, touchkey_suspend, touchkey_resume);
 
 #endif
+static void cypress_touchkey_interrupt_set_dual(struct i2c_client *client)
+{
+	struct touchkey_i2c *tkey_i2c = dev_get_drvdata(&client->dev);
+	int ret = 0;
+	int retry = 5;
+	u8 data[3] = {0, };
+
+	if (tkey_i2c->firmware_ver <= TK_MULTI_FW_VER) {
+		dev_err(&client->dev, "%s: not support this version\n", __func__);
+		return;
+	}
+
+	while (retry--) {
+		data[0] = TK_CMD_DUAL_DETECTION;
+		data[1] = 0x00;
+		data[2] = TK_BIT_DETECTION_CONFIRM;
+
+		ret = i2c_smbus_write_i2c_block_data(client, TK_DUAL_REG, 3, &data[0]);
+		if (ret < 0) {
+			dev_err(&client->dev, "%s: i2c write error. (%d)\n", __func__, ret);
+			msleep(30);
+			continue;
+		}
+		msleep(50);
+
+		data[0] = CYPRESS_DETECTION_FLAG;
+
+		ret = i2c_smbus_read_i2c_block_data(client, data[0], 1, &data[1]);
+		if (ret < 0) {
+			dev_err(&client->dev, "%s: i2c read error. (%d)\n", __func__, ret);
+			msleep(30);
+			continue;
+		}
+
+		if (data[1] != 1) {
+			dev_err(&client->dev,
+				"%s: interrupt set: 0x%X, failed.\n", __func__, data[1]);
+			continue;
+		}
+		tkey_i2c->support_multi_touch = data[1];
+
+		dev_info(&client->dev, "%s: interrupt set: 0x%X\n", __func__, tkey_i2c->support_multi_touch);
+		break;
+	}
+
+}
 
 static int touchkey_i2c_check(struct touchkey_i2c *tkey_i2c)
 {
@@ -1211,6 +1284,9 @@ static int touchkey_i2c_check(struct touchkey_i2c *tkey_i2c)
 
 	tkey_i2c->firmware_ver = data[1];
 	tkey_i2c->module_ver = data[2];
+
+	/* CYPRESS Firmware setting interrupt type : dual or single interrupt */
+	cypress_touchkey_interrupt_set_dual(tkey_i2c->client);
 
 	return ret;
 }
@@ -1505,6 +1581,8 @@ static ssize_t set_touchkey_update_store(struct device *dev,
 		return count;
 	}
 
+	cypress_touchkey_interrupt_set_dual(tkey_i2c->client);
+
 #ifdef TEST_JIG_MODE
 	i2c_touchkey_write(tkey_i2c->client, &get_touch, 1);
 #endif
@@ -1549,38 +1627,6 @@ static ssize_t set_touchkey_firm_status_show(struct device *dev,
 		count = sprintf(buf, "Downloading\n");
 	else if (tkey_i2c->update_status == TK_UPDATE_FAIL)
 		count = sprintf(buf, "Fail\n");
-
-	return count;
-}
-
-static ssize_t sec_keypad_enable_show(struct device *dev,
-				      struct device_attribute *attr,
-				      char *buf)
-{
-	struct touchkey_i2c *tkey_i2c = dev_get_drvdata(dev);
-	return sprintf(buf, "%d\n", atomic_read(&tkey_i2c->keypad_enable));
-}
-
-static ssize_t sec_keypad_enable_store(struct device *dev,
-				       struct device_attribute *attr,
-				       const char *buf, size_t count)
-{
-	struct touchkey_i2c *tkey_i2c = dev_get_drvdata(dev);
-	int i;
-
-	unsigned int val = 0;
-	sscanf(buf, "%d", &val);
-	val = (val == 0 ? 0 : 1);
-	if (val) {
-		for (i = 0; i < touchkey_count; i++)
-			set_bit(touchkey_keycode[i],
-					tkey_i2c->input_dev->keybit);
-	} else {
-		for (i = 0; i < touchkey_count; i++)
-			clear_bit(touchkey_keycode[i],
-					tkey_i2c->input_dev->keybit);
-	}
-	input_sync(tkey_i2c->input_dev);
 
 	return count;
 }
@@ -1636,9 +1682,6 @@ static DEVICE_ATTR(flip_mode, S_IRUGO | S_IWUSR | S_IWGRP, NULL,
 		   flip_cover_mode_enable);
 #endif
 
-static DEVICE_ATTR(keypad_enable, S_IRUGO|S_IWUSR, sec_keypad_enable_show,
-		   sec_keypad_enable_store);
-
 static struct attribute *touchkey_attributes[] = {
 	&dev_attr_brightness.attr,
 	&dev_attr_touchkey_menu.attr,
@@ -1674,7 +1717,6 @@ static struct attribute *touchkey_attributes[] = {
 #ifdef TKEY_FLIP_MODE
 	&dev_attr_flip_mode.attr,
 #endif
-	&dev_attr_keypad_enable.attr,
 	NULL,
 };
 
@@ -1749,8 +1791,6 @@ static int i2c_touchkey_probe(struct i2c_client *client,
 #ifdef CONFIG_VT_TKEY_SKIP_MATCH
 	set_bit(EV_TOUCHKEY, input_dev->evbit);
 #endif
-
-	atomic_set(&tkey_i2c->keypad_enable, 1);
 
 	for (i = 1; i < touchkey_count; i++)
 		set_bit(touchkey_keycode[i], input_dev->keybit);

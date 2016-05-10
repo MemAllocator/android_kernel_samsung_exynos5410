@@ -25,14 +25,6 @@ config ANDROID_LOGGER
 	tristate "Android log driver"
 	default n
 
-config LOGCAT_SIZE
-	int "Adjust android log buffer sizes"
-	default 256
-	depends on ANDROID_LOGGER
-	help
-	  Set logger buffer size. Enter a number greater than zero.
-	  Any value less than 256 is recommended. Reduce value to save kernel static memory size.
-
 config ANDROID_PERSISTENT_RAM
 	bool "Android Persistent RAM"
 	depends on HAVE_MEMBLOCK
@@ -94,13 +86,6 @@ config ANDROID_INTF_ALARM_DEV
 	  Provides non-wakeup and rtc backed wakeup alarms based on rtc or
 	  elapsed realtime, and a non-wakeup alarm on the monotonic clock.
 	  Also exports the alarm interface to user-space.
-	  
-config SAMP_HOTNESS
-	bool "Kill hidden process by hotness"
-	default n
-	help
-	  This option change kill hidden process policy in LMK
-
 endif # if ANDROID
 
 endmenu

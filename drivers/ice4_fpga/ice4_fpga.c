@@ -40,7 +40,9 @@
 #include <mach/gpio-exynos.h>
 
 #include "ice4_fpga.h"
-#include "ice4_fpga_Sep30update.h"
+#if defined(CONFIG_ICE4_FPGA_RDA)
+#include "ice4_fpga_rda.h"
+#endif
 
 #if defined(TEST_DEBUG)
 #define pr_barcode	pr_emerg
@@ -65,6 +67,8 @@
 #define MAX_SIZE		2048
 #define READ_LENGTH		8
 #endif
+
+#define US_TO_PATTERN		1000000
 
 struct ice4_fpga_data {
 	struct i2c_client		*client;
@@ -125,6 +129,7 @@ static int barcode_send_firmware_data(unsigned char *data)
 	}
 	return 0;
 }
+#if defined(CONFIG_ICE4_FPGA_RDA)
 static int barcode_send_firmware_data_rda(unsigned char *data)
 {
 	unsigned int i,j;
@@ -157,6 +162,7 @@ static int barcode_send_firmware_data_rda(unsigned char *data)
 	}
 	return 0;
 }
+#endif
 
 static int check_fpga_cdone(void)
 {
@@ -194,8 +200,11 @@ static int barcode_fpga_fimrware_update_start(unsigned char *data)
 		usleep_range(10, 20);
 		barcode_send_firmware_data(data);
 		usleep_range(50, 60);
-
+#if defined(CONFIG_ICE4_FPGA_RDA)
 		if (retry_count >= 0) {
+#else
+		if (retry_count > 9) {
+#endif
 			pr_barcode("barcode firmware update is NOT loaded\n");
 			break;
 		} else {
@@ -215,6 +224,7 @@ static int barcode_fpga_fimrware_update_start(unsigned char *data)
 	return 0;
 }
 
+#if defined(CONFIG_ICE4_FPGA_RDA)
 static int barcode_fpga_fimrware_update_start_rda(unsigned char *data)
 {
 	int retry_count = 0;
@@ -237,7 +247,7 @@ static int barcode_fpga_fimrware_update_start_rda(unsigned char *data)
 	while(!check_fpga_cdone()) {
 		usleep_range(10, 20);
 		barcode_send_firmware_data_rda(data);
-		usleep_range(50, 60);	
+		usleep_range(50, 60);
 
 		if (retry_count >= 0) {
 			pr_barcode("barcode firmware update is NOT loaded\n");
@@ -245,7 +255,7 @@ static int barcode_fpga_fimrware_update_start_rda(unsigned char *data)
 		} else {
 			retry_count++;
 		}
-	}	
+	}
 
 	if (check_fpga_cdone()) {
 		gpio_set_value(GPIO_FPGA_RST_N, GPIO_LEVEL_HIGH);
@@ -259,12 +269,13 @@ static int barcode_fpga_fimrware_update_start_rda(unsigned char *data)
 	gpio_free(GPIO_FPGA_SPI_CLK);
 	return 0;
 }
-
+#endif
 
 void barcode_fpga_firmware_update(void)
 {
+#if defined(CONFIG_ICE4_FPGA_RDA)
 	int retry_count = 0;
-	
+
 	while(!check_fpga_cdone()) {
 		barcode_fpga_fimrware_update_start(spiword);
 		if(!check_fpga_cdone())
@@ -276,6 +287,9 @@ void barcode_fpga_firmware_update(void)
 			retry_count++;
 		}
 	}
+#else
+	barcode_fpga_fimrware_update_start(spiword);
+#endif
 }
 
 static ssize_t barcode_emul_store(struct device *dev, struct device_attribute *attr,
@@ -317,7 +331,9 @@ static ssize_t barcode_emul_fw_update_store(struct device *dev, struct device_at
 	struct file *fp = NULL;
 	long fsize = 0, nread = 0;
 	const u8 *buff = 0;
+#if defined(CONFIG_ICE4_FPGA_RDA)
 	int retry_count = 0;
+#endif
 	char fw_path[BARCODE_EMUL_MAX_FW_PATH+1];
 	mm_segment_t old_fs = get_fs();
 
@@ -355,8 +371,9 @@ static ssize_t barcode_emul_fw_update_store(struct device *dev, struct device_at
 		goto err_fw_size;
 	}
 
+#if defined(CONFIG_ICE4_FPGA_RDA)
 //	barcode_fpga_fimrware_update_start((unsigned char *)buff);
-	do {
+	while(1) {
 		barcode_fpga_fimrware_update_start((unsigned char *)buff);
 		if(!check_fpga_cdone())
 			barcode_fpga_fimrware_update_start_rda((unsigned char *)buff);
@@ -366,8 +383,11 @@ static ssize_t barcode_emul_fw_update_store(struct device *dev, struct device_at
 		} else {
 			retry_count++;
 		}
-	}while(!check_fpga_cdone());
-	
+	}
+#else
+	barcode_fpga_fimrware_update_start((unsigned char *)buff);
+#endif
+
 err_fw_size:
 	kfree(buff);
 
@@ -744,8 +764,8 @@ static ssize_t remocon_store(struct device *dev, struct device_attribute *attr,
 		const char *buf, size_t size)
 {
 	struct ice4_fpga_data *data = dev_get_drvdata(dev);
-	unsigned int _data;
-	int count, i;
+	unsigned int _data, _tdata;
+	int count, i, converting_factor = 1;
 
 	printk(KERN_INFO "%s : ir_send called\n", __func__);
 	if (!fw_loaded) {
@@ -758,8 +778,10 @@ static ssize_t remocon_store(struct device *dev, struct device_attribute *attr,
 			if (_data == 0 || buf == '\0')
 				break;
 
+			// 2 is the initial value of count
 			if (data->count == 2) {
 				data->ir_freq = _data;
+				converting_factor = US_TO_PATTERN / data->ir_freq;
 				data->i2c_block_transfer.data[2] = _data >> 16;
 				data->i2c_block_transfer.data[3]
 							= (_data >> 8) & 0xFF;
@@ -767,12 +789,13 @@ static ssize_t remocon_store(struct device *dev, struct device_attribute *attr,
 
 				data->count += 3;
 			} else {
-				data->ir_sum += _data;
+				_tdata = _data / converting_factor;
+				data->ir_sum += _tdata;
 				count = data->count;
 				data->i2c_block_transfer.data[count]
-								= _data >> 8;
+								= _tdata >> 8;
 				data->i2c_block_transfer.data[count+1]
-								= _data & 0xFF;
+								= _tdata & 0xFF;
 				data->count += 2;
 			}
 

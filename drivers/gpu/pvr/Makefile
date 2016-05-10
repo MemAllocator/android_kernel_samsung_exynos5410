@@ -19,9 +19,10 @@ ccflags-y := \
 	-Wstrict-prototypes\
 	-Wno-unused-parameter\
 	-Wno-sign-compare\
+	-Werror\
 	-fno-strict-aliasing\
 	-Wno-pointer-arith\
-	-O3
+	-Os
 
 ccflags-y += -DLINUX -D__linux__ -DANDROID
 
@@ -80,8 +81,7 @@ DEFINES += \
 	-DSUPPORT_ACTIVE_POWER_MANAGEMENT \
 	-DUSING_532MHZ \
 	-DSUPPORT_SGX_HWPERF \
-	-DDUMP_UKERNEL_INFO_AT_TIMEOUT \
-	-DPVR_DISABLE_LOGGING \
+	-DDUMP_UKERNEL_INFO_AT_TIMEOUT
 
 ifeq ($(CONFIG_PVR_SGX_FENCE_SYNC),y)
 DEFINES += -DPVR_ANDROID_NATIVE_WINDOW_HAS_SYNC

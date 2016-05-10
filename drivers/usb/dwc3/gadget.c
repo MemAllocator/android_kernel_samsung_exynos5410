@@ -1390,7 +1390,6 @@ err1:
 	__dwc3_gadget_ep_disable(dwc->eps[0]);
 
 err0:
-	dwc->gadget_driver = NULL;
 	spin_unlock_irqrestore(&dwc->lock, flags);
 
 	return ret;
@@ -1451,7 +1450,6 @@ static int __devinit dwc3_gadget_init_endpoints(struct dwc3 *dwc)
 
 		if (epnum == 0 || epnum == 1) {
 			dep->endpoint.maxpacket = 512;
-			dep->endpoint.maxburst = 1;
 			dep->endpoint.ops = &dwc3_gadget_ep0_ops;
 			if (!epnum)
 				dwc->gadget.ep0 = &dep->endpoint;
@@ -1776,7 +1774,6 @@ static void dwc3_stop_active_transfer(struct dwc3 *dwc, u32 epnum)
 		ret = dwc3_send_gadget_ep_cmd(dwc, dep->number, cmd, &params);
 		WARN_ON_ONCE(ret);
 		dep->res_trans_idx = 0;
-		dep->flags &= ~DWC3_EP_BUSY;
 	}
 }
 

@@ -34,7 +34,6 @@
 #include <linux/blktrace_api.h>
 #include <linux/hash.h>
 #include <linux/uaccess.h>
-#include <linux/pm_runtime.h>
 
 #include <trace/events/block.h>
 
@@ -46,6 +45,11 @@ static LIST_HEAD(elv_list);
 /*
  * Merge hash stuff.
  */
+static const int elv_hash_shift = 6;
+#define ELV_HASH_BLOCK(sec)	((sec) >> 3)
+#define ELV_HASH_FN(sec)	\
+		(hash_long(ELV_HASH_BLOCK((sec)), elv_hash_shift))
+#define ELV_HASH_ENTRIES	(1 << elv_hash_shift)
 #define rq_hash_key(rq)		(blk_rq_pos(rq) + blk_rq_sectors(rq))
 
 /*
@@ -146,6 +150,7 @@ static struct elevator_queue *elevator_alloc(struct request_queue *q,
 				  struct elevator_type *e)
 {
 	struct elevator_queue *eq;
+	int i;
 
 	eq = kmalloc_node(sizeof(*eq), GFP_KERNEL | __GFP_ZERO, q->node);
 	if (unlikely(!eq))
@@ -154,7 +159,14 @@ static struct elevator_queue *elevator_alloc(struct request_queue *q,
 	eq->type = e;
 	kobject_init(&eq->kobj, &elv_ktype);
 	mutex_init(&eq->sysfs_lock);
-	hash_init(eq->hash);
+
+	eq->hash = kmalloc_node(sizeof(struct hlist_head) * ELV_HASH_ENTRIES,
+					GFP_KERNEL, q->node);
+	if (!eq->hash)
+		goto err;
+
+	for (i = 0; i < ELV_HASH_ENTRIES; i++)
+		INIT_HLIST_HEAD(&eq->hash[i]);
 
 	return eq;
 err:
@@ -169,6 +181,7 @@ static void elevator_release(struct kobject *kobj)
 
 	e = container_of(kobj, struct elevator_queue, kobj);
 	elevator_put(e->type);
+	kfree(e->hash);
 	kfree(e);
 }
 
@@ -237,7 +250,7 @@ EXPORT_SYMBOL(elevator_exit);
 
 static inline void __elv_rqhash_del(struct request *rq)
 {
-	hash_del(&rq->hash);
+	hlist_del_init(&rq->hash);
 }
 
 static void elv_rqhash_del(struct request_queue *q, struct request *rq)
@@ -251,7 +264,7 @@ static void elv_rqhash_add(struct request_queue *q, struct request *rq)
 	struct elevator_queue *e = q->elevator;
 
 	BUG_ON(ELV_ON_HASH(rq));
-	hash_add(e->hash, &rq->hash, rq_hash_key(rq));
+	hlist_add_head(&rq->hash, &e->hash[ELV_HASH_FN(rq_hash_key(rq))]);
 }
 
 static void elv_rqhash_reposition(struct request_queue *q, struct request *rq)
@@ -263,10 +276,11 @@ static void elv_rqhash_reposition(struct request_queue *q, struct request *rq)
 static struct request *elv_rqhash_find(struct request_queue *q, sector_t offset)
 {
 	struct elevator_queue *e = q->elevator;
+	struct hlist_head *hash_list = &e->hash[ELV_HASH_FN(offset)];
 	struct hlist_node *entry, *next;
 	struct request *rq;
 
-	hash_for_each_possible_safe(e->hash, rq, entry, next, hash, offset) {
+	hlist_for_each_entry_safe(rq, entry, next, hash_list, hash) {
 		BUG_ON(!ELV_ON_HASH(rq));
 
 		if (unlikely(!rq_mergeable(rq))) {
@@ -518,27 +532,6 @@ void elv_bio_merged(struct request_queue *q, struct request *rq,
 		e->type->ops.elevator_bio_merged_fn(q, rq, bio);
 }
 
-#ifdef CONFIG_PM_RUNTIME
-static void blk_pm_requeue_request(struct request *rq)
-{
-	if (rq->q->dev && !(rq->cmd_flags & REQ_PM))
-		rq->q->nr_pending--;
-}
-
-static void blk_pm_add_request(struct request_queue *q, struct request *rq)
-{
-	if (q->dev && !(rq->cmd_flags & REQ_PM) && q->nr_pending++ == 0 &&
-	    (q->rpm_status == RPM_SUSPENDED || q->rpm_status == RPM_SUSPENDING))
-		pm_request_resume(q->dev);
-}
-#else
-static inline void blk_pm_requeue_request(struct request *rq) {}
-static inline void blk_pm_add_request(struct request_queue *q,
-				      struct request *rq)
-{
-}
-#endif
-
 void elv_requeue_request(struct request_queue *q, struct request *rq)
 {
 	/*
@@ -553,44 +546,7 @@ void elv_requeue_request(struct request_queue *q, struct request *rq)
 
 	rq->cmd_flags &= ~REQ_STARTED;
 
-	blk_pm_requeue_request(rq);
-
 	__elv_add_request(q, rq, ELEVATOR_INSERT_REQUEUE);
-}
-
-/**
- * elv_reinsert_request() - Insert a request back to the scheduler
- * @q:		request queue where request should be inserted
- * @rq:		request to be inserted
- *
- * This function returns the request back to the scheduler to be
- * inserted as if it was never dispatched
- *
- * Return: 0 on success, error code on failure
- */
-int elv_reinsert_request(struct request_queue *q, struct request *rq)
-{
-	int res;
-
-	if (!q->elevator->type->ops.elevator_reinsert_req_fn)
-		return -EPERM;
-
-	res = q->elevator->type->ops.elevator_reinsert_req_fn(q, rq);
-	if (!res) {
-		/*
-		 * it already went through dequeue, we need to decrement the
-		 * in_flight count again
-		 */
-		if (blk_account_rq(rq)) {
-			q->in_flight[rq_is_sync(rq)]--;
-			if (rq->cmd_flags & REQ_SORTED)
-				elv_deactivate_rq(q, rq);
-		}
-		rq->cmd_flags &= ~REQ_STARTED;
-		q->nr_sorted++;
-	}
-
-	return res;
 }
 
 void elv_drain_elevator(struct request_queue *q)
@@ -631,14 +587,12 @@ void __elv_add_request(struct request_queue *q, struct request *rq, int where)
 {
 	trace_block_rq_insert(q, rq);
 
-	blk_pm_add_request(q, rq);
-
 	rq->q = q;
 
 	if (rq->cmd_flags & REQ_SOFTBARRIER) {
 		/* barriers are scheduling boundary, update end_sector */
 		if (rq->cmd_type == REQ_TYPE_FS ||
-		    (rq->cmd_flags & (REQ_DISCARD | REQ_SANITIZE))) {
+		    (rq->cmd_flags & REQ_DISCARD)) {
 			q->end_sector = rq_end_sector(rq);
 			q->boundary_rq = rq;
 		}
@@ -789,11 +743,6 @@ void elv_completed_request(struct request_queue *q, struct request *rq)
 {
 	struct elevator_queue *e = q->elevator;
 
-	if (rq->cmd_flags & REQ_URGENT) {
-		q->notified_urgent = false;
-		WARN_ON(!q->dispatched_urgent);
-		q->dispatched_urgent = false;
-	}
 	/*
 	 * request is released from the driver, io must be done
 	 */
@@ -868,8 +817,6 @@ int __elv_register_queue(struct request_queue *q, struct elevator_queue *e)
 		}
 		kobject_uevent(&e->kobj, KOBJ_ADD);
 		e->registered = 1;
-		if (e->type->ops.elevator_registered_fn)
-			e->type->ops.elevator_registered_fn(q);
 	}
 	return error;
 }

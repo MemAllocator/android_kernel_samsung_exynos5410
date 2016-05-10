@@ -15,13 +15,7 @@
 #ifndef __LINUX_VIDEODEV2_EXYNOS_MEDIA_H
 #define __LINUX_VIDEODEV2_EXYNOS_MEDIA_H
 
-#include <linux/videodev2_exynos_media_ext.h>
-
 /*      Pixel format          FOURCC                     depth  Description  */
-
-/* RGB format */
-#define V4L2_PIX_FMT_RGB32X v4l2_fourcc('R', 'G', 'B', 'X') /* 32  RGB-8-8-8-8   */
-#define V4L2_PIX_FMT_ARGB32 v4l2_fourcc('A', 'R', 'G', 'B') /* 32  ARGB-8-8-8-8  */
 
 /* two planes -- one Y, one Cr + Cb interleaved  */
 #define V4L2_PIX_FMT_YUV444_2P v4l2_fourcc('Y', 'U', '2', 'P') /* 24  Y/CbCr */

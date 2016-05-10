@@ -512,17 +512,20 @@ int jbd2_log_start_commit(journal_t *journal, tid_t tid)
 }
 
 /*
- * Force and wait any uncommitted transactions.  We can only force the running
- * transaction if we don't have an active handle, otherwise, we will deadlock.
- * Returns: <0 in case of error,
- *           0 if nothing to commit,
- *           1 if transaction was successfully committed.
+ * Force and wait upon a commit if the calling process is not within
+ * transaction.  This is used for forcing out undo-protected data which contains
+ * bitmaps, when the fs is running out of space.
+ *
+ * We can only force the running transaction if we don't have an active handle;
+ * otherwise, we will deadlock.
+ *
+ * Returns true if a transaction was started.
  */
-static int __jbd2_journal_force_commit(journal_t *journal)
+int jbd2_journal_force_commit_nested(journal_t *journal)
 {
 	transaction_t *transaction = NULL;
 	tid_t tid;
-	int need_to_start = 0, ret = 0;
+	int need_to_start = 0;
 
 	read_lock(&journal->j_state_lock);
 	if (journal->j_running_transaction && !current->journal_info) {
@@ -533,53 +536,16 @@ static int __jbd2_journal_force_commit(journal_t *journal)
 		transaction = journal->j_committing_transaction;
 
 	if (!transaction) {
-		/* Nothing to commit */
 		read_unlock(&journal->j_state_lock);
-		return 0;
+		return 0;	/* Nothing to retry */
 	}
+
 	tid = transaction->t_tid;
 	read_unlock(&journal->j_state_lock);
 	if (need_to_start)
 		jbd2_log_start_commit(journal, tid);
-	ret = jbd2_log_wait_commit(journal, tid);
-	if (!ret)
-		ret = 1;
-
-	return ret;
-}
-
-/**
- * Force and wait upon a commit if the calling process is not within
- * transaction.  This is used for forcing out undo-protected data which contains
- * bitmaps, when the fs is running out of space.
- *
- * @journal: journal to force
- * Returns true if progress was made.
- */
-int jbd2_journal_force_commit_nested(journal_t *journal)
-{
-	int ret;
-
-	ret = __jbd2_journal_force_commit(journal);
-	return ret > 0;
-}
-
-/**
- * int journal_force_commit() - force any uncommitted transactions
- * @journal: journal to force
- *
- * Caller want unconditional commit. We can only force the running transaction
- * if we don't have an active handle, otherwise, we will deadlock.
- */
-int jbd2_journal_force_commit(journal_t *journal)
-{
-	int ret;
-
-	J_ASSERT(!current->journal_info);
-	ret = __jbd2_journal_force_commit(journal);
-	if (ret > 0)
-		ret = 0;
-	return ret;
+	jbd2_log_wait_commit(journal, tid);
+	return 1;
 }
 
 /*
@@ -1368,7 +1334,7 @@ static void jbd2_mark_journal_empty(journal_t *journal)
  * Update a journal's errno.  Write updated superblock to disk waiting for IO
  * to complete.
  */
-void jbd2_journal_update_sb_errno(journal_t *journal)
+static void jbd2_journal_update_sb_errno(journal_t *journal)
 {
 	journal_superblock_t *sb = journal->j_superblock;
 
@@ -1380,7 +1346,6 @@ void jbd2_journal_update_sb_errno(journal_t *journal)
 
 	jbd2_write_superblock(journal, WRITE_SYNC);
 }
-EXPORT_SYMBOL(jbd2_journal_update_sb_errno);
 
 /*
  * Read the superblock for a given journal, performing initial

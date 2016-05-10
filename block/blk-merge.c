@@ -42,9 +42,6 @@ static unsigned int __blk_recalc_rq_segments(struct request_queue *q,
 					goto new_segment;
 				if (!BIOVEC_SEG_BOUNDARY(q, bvprv, bv))
 					goto new_segment;
-				if ((bvprv->bv_page != bv->bv_page) &&
-				    (bvprv->bv_page + 1) != bv->bv_page)
-					goto new_segment;
 
 				seg_size += bv->bv_len;
 				bvprv = bv;
@@ -143,9 +140,6 @@ int blk_rq_map_sg(struct request_queue *q, struct request *rq,
 			if (!BIOVEC_PHYS_MERGEABLE(bvprv, bvec))
 				goto new_segment;
 			if (!BIOVEC_SEG_BOUNDARY(q, bvprv, bvec))
-				goto new_segment;
-			if ((bvprv->bv_page != bvec->bv_page) &&
-			    ((bvprv->bv_page + 1) != bvec->bv_page))
 				goto new_segment;
 
 			sg->length += nbytes;
@@ -389,12 +383,6 @@ static int attempt_merge(struct request_queue *q, struct request *req,
 		return 0;
 
 	/*
-	 * Don't merge file system requests and sanitize requests
-	 */
-	if ((req->cmd_flags & REQ_SANITIZE) != (next->cmd_flags & REQ_SANITIZE))
-		return 0;
-
-	/*
 	 * not contiguous
 	 */
 	if (blk_rq_pos(req) + blk_rq_sectors(req) != blk_rq_pos(next))
@@ -496,12 +484,6 @@ bool blk_rq_merge_ok(struct request *rq, struct bio *bio)
 	/* don't merge discard requests and secure discard requests */
 	if ((bio->bi_rw & REQ_SECURE) != (rq->bio->bi_rw & REQ_SECURE))
 		return false;
-
-	/*
-	 * Don't merge sanitize requests
-	 */
-	if ((bio->bi_rw & REQ_SANITIZE) != (rq->bio->bi_rw & REQ_SANITIZE))
-		return 0;
 
 	/* different data direction or already started, don't merge */
 	if (bio_data_dir(bio) != rq_data_dir(rq))

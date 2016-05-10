@@ -26,6 +26,7 @@ fw-shipped- += acenic/tg1.bin
 else
 acenic-objs := acenic/tg1.bin acenic/tg2.bin
 endif
+fw-shipped-$(CONFIG_3C359) += 3com/3C359.bin
 fw-shipped-$(CONFIG_ACENIC) += $(acenic-objs)
 fw-shipped-$(CONFIG_ADAPTEC_STARFIRE) += adaptec/starfire_rx.bin \
 					 adaptec/starfire_tx.bin
@@ -85,6 +86,7 @@ fw-shipped-$(CONFIG_SCSI_QLOGIC_1280) += qlogic/1040.bin qlogic/1280.bin \
 					 qlogic/12160.bin
 fw-shipped-$(CONFIG_SCSI_QLOGICPTI) += qlogic/isp1000.bin
 fw-shipped-$(CONFIG_INFINIBAND_QIB) += qlogic/sd7220.fw
+fw-shipped-$(CONFIG_SMCTR) += tr_smctr.bin
 fw-shipped-$(CONFIG_SND_KORG1212) += korg/k1212.dsp
 fw-shipped-$(CONFIG_SND_MAESTRO3) += ess/maestro3_assp_kernel.fw \
 				     ess/maestro3_assp_minisrc.fw
@@ -146,7 +148,7 @@ fw-shipped-$(CONFIG_EPEN_WACOM_G9PLL) += epen/W9007_B804.bin epen/W9007_B878.bin
 
 fw-shipped-$(CONFIG_SENSORS_SSP) += ssp.fw
 fw-shipped-$(CONFIG_SENSORS_SSP) += ssp_crashed.fw
-TSPFIRMWARE_DIRECTORY = $(srctree)/firmware/tsp_atmel
+TSPFIRMWARE_DIRECTORY = firmware/tsp_atmel
 ifeq ($(shell test -d $(TSPFIRMWARE_DIRECTORY) && echo yes),yes)
 fw-shipped-$(CONFIG_TOUCHSCREEN_ATMEL_MXT540E) += tsp_atmel/mXT540E.fw
 fw-shipped-$(CONFIG_TOUCHSCREEN_ATMEL_MXT540S) += tsp_atmel/mXT540Sg.fw tsp_atmel/mXT540Si.fw
@@ -156,7 +158,7 @@ else
 $(warning '$(TSPFIRMWARE_DIRECTORY)' directory dose not exist)
 endif
 
-TSPFIRMWARE_DIRECTORY = $(srctree)/firmware/tsp_synaptics
+TSPFIRMWARE_DIRECTORY = firmware/tsp_synaptics
 ifeq ($(shell test -d $(TSPFIRMWARE_DIRECTORY) && echo yes),yes)
 fw-shipped-$(CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_RMI) += tsp_synaptics/synaptics_b0_h.fw \
 	tsp_synaptics/synaptics_b0_5_1.fw \

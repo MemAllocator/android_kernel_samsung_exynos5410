@@ -67,5 +67,3 @@ obj-$(CONFIG_MOBICORE_DRIVER)  += tzic.o
 ifeq ($(TIMA_ENABLED),1)
 obj-$(CONFIG_TIMA_LOG)		+= tima_debug_log.o
 endif
-
-obj-$(CONFIG_UID_CPUTIME) += uid_cputime.o

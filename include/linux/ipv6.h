@@ -166,7 +166,6 @@ struct ipv6_devconf {
 	__s32		accept_source_route;
 #ifdef CONFIG_IPV6_OPTIMISTIC_DAD
 	__s32		optimistic_dad;
-	__s32		use_optimistic;
 #endif
 #ifdef CONFIG_IPV6_MROUTE
 	__s32		mc_forwarding;
@@ -174,7 +173,6 @@ struct ipv6_devconf {
 	__s32		disable_ipv6;
 	__s32		accept_dad;
 	__s32		force_tllao;
-	__s32		use_oif_addrs_only;
 	void		*sysctl;
 };
 
@@ -217,8 +215,6 @@ enum {
 	DEVCONF_ACCEPT_DAD,
 	DEVCONF_FORCE_TLLAO,
 	DEVCONF_ACCEPT_RA_RT_TABLE,
-	DEVCONF_USE_OPTIMISTIC,
-	DEVCONF_USE_OIF_ADDRS_ONLY,
 	DEVCONF_MAX
 };
 

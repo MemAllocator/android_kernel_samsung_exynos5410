@@ -99,6 +99,7 @@ void sec_gpu_vol_clk_change(int sgx_clock, int sgx_voltage)
 	sgx_voltage += gpu_voltage_marin;
 #if defined(CONFIG_ARM_EXYNOS5410_BUS_DEVFREQ)
 	if (sec_gpu_power_on) {
+
 	if (sgx_clock >= sec_gpu_top_clock) {
 	#ifdef CONFIG_ARM_EXYNOS_IKS_CPUFREQ
 			pm_qos_update_request(&exynos5_g3d_cpu_qos, 600000);
@@ -116,6 +117,7 @@ void sec_gpu_vol_clk_change(int sgx_clock, int sgx_voltage)
 		pm_qos_update_request(&exynos5_g3d_int_qos, 0);
 		pm_qos_update_request(&exynos5_g3d_mif_qos, 0);
 	}
+
 #endif
 	if (sec_gpu_power_on)	{
 		if (cur_sgx_clock > sgx_clock) {
@@ -131,7 +133,7 @@ void sec_gpu_vol_clk_change(int sgx_clock, int sgx_voltage)
 	else {
 		sec_gpu_setting_clock = sgx_clock;
 		sec_gpu_setting_voltage = sgx_voltage;
-//		PVR_LOG(("SGX keep DVFS info sgx_clock:%d MHz, sgx_voltage:%d mV ", sgx_clock, sgx_voltage));
+		PVR_LOG(("SGX keep DVFS info sgx_clock:%d MHz, sgx_voltage:%d mV ", sgx_clock, sgx_voltage));
 	}
 
 	mutex_unlock(&lock);

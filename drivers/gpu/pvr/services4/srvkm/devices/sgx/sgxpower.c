@@ -265,7 +265,10 @@ static IMG_VOID SGXPollForClockGating (PVRSRV_SGXDEV_INFO	*psDevInfo,
 						MAX_HW_TIME_US/WAIT_TRY_COUNT,
 						IMG_FALSE) != PVRSRV_OK)
 	{
-		PVR_DPF((PVR_DBG_WARNING, "SGXPollForClockGating: %s failed.", pszComment));
+		PVR_DPF((PVR_DBG_WARNING,"SGXPollForClockGating: %s failed.", pszComment));
+		/* IMG recommends don't need to check sgx internal clockgating status */
+		/* SGXDumpDebugInfo(psDevInfo, IMG_FALSE); */
+		/* PVR_DBG_BREAK; */
 	}
 	#endif /* NO_HARDWARE */
 
@@ -377,7 +380,7 @@ PVRSRV_ERROR SGXPrePowerState (IMG_HANDLE				hDevHandle,
 							MAX_HW_TIME_US/WAIT_TRY_COUNT,
 							IMG_FALSE) != PVRSRV_OK)
 		{
-			PVR_DPF((PVR_DBG_ERROR, "SGXPrePowerState: Wait for pending interrupts failed."));
+			PVR_DPF((PVR_DBG_ERROR,"SGXPrePowerState: Wait for pending interrupts failed."));
 			SGXDumpDebugInfo(psDevInfo, IMG_TRUE);
 			PVR_DBG_BREAK;
 		}
@@ -389,7 +392,7 @@ PVRSRV_ERROR SGXPrePowerState (IMG_HANDLE				hDevHandle,
 						MAX_HW_TIME_US/WAIT_TRY_COUNT,
 						IMG_FALSE) != PVRSRV_OK)
 		{
-			PVR_DPF((PVR_DBG_ERROR, "SGXPrePowerState: Wait for USE to be idle."));
+			PVR_DPF((PVR_DBG_ERROR,"SGXPrePowerState: Wait for USE to be idle."));
 			SGXDumpDebugInfo(psDevInfo, IMG_FALSE);
 			PVR_DBG_BREAK;
 		}
@@ -401,7 +404,7 @@ PVRSRV_ERROR SGXPrePowerState (IMG_HANDLE				hDevHandle,
 						MAX_HW_TIME_US/WAIT_TRY_COUNT,
 						IMG_FALSE) != PVRSRV_OK)
 		{
-			PVR_DPF((PVR_DBG_ERROR, "SGXPrePowerState: Wait for USE to be idle."));
+			PVR_DPF((PVR_DBG_ERROR,"SGXPrePowerState: Wait for USE to be idle."));
 			SGXDumpDebugInfo(psDevInfo, IMG_FALSE);
 			PVR_DBG_BREAK;
 		}
